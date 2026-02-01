@@ -218,3 +218,22 @@ frontend/out/
 # General Node/JS build files
 /dist
 /build
+
+# Catch .env files in subfolders (backend/.env, frontend/.env, root .env)
+.env*
+!.env.example
+
+# Old SQLite database (from the early MVP stage)
+*.db
+*.sqlite3
+
+# Mac/OS leftovers (Prevents those annoying hidden files)
+.DS_Store
+Thumbs.db
+
+# Ensure all node_modules are caught regardless of depth
+**/node_modules/
+**/venv/
+
+# Docker volumes (if you ever run them locally without Docker)
+postgres_data/

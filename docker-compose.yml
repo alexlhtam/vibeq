@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:15
+    container_name: vibeq-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mysecretpassword}
+      POSTGRES_DB: ${DB_NAME:-vibeq_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    container_name: vibeq-backend
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - SOUNDCLOUD_CLIENT_ID=${SOUNDCLOUD_CLIENT_ID}
+    depends_on:
+      - db
+
+  frontend:
+    build: ./frontend
+    container_name: vibeq-frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_SOUNDCLOUD_CLIENT_ID=${NEXT_PUBLIC_SOUNDCLOUD_CLIENT_ID}
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
