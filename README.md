@@ -1,4 +1,4 @@
-# vibeQ (MVP) 🎵
+# vibeQ (MVP)
 
 vibeQ is a "Democratic Jukebox" application. It allows guests to search for music and request songs, while the Host (Admin) manages an active queue and controls live playback via a custom dashboard.
 
@@ -72,13 +72,13 @@ SoundCloud's developer portal is currently restricted. To make the app work, you
 
 ---
 
-## 📝 Important Limitations
+## Important Limitations
 - **Previews:** Due to SoundCloud's free-tier API restrictions, major label songs (e.g., Linkin Park, Avril Lavigne) will only play as **30-second previews** and then fade out. Independent tracks and remixes typically play in full.
 - **Browser Autoplay:** Browsers block audio until a user interacts with the page. On the Host Dashboard, you **must** click the "Start the Vibe" button to allow music to play.
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 ```text
 vibeq/
 ├── docker-compose.yml     # Docker Orchestrator
