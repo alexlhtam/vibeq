@@ -1,90 +1,112 @@
 # backend/services.py
 
 import requests
-import urllib.parse
 import os
-from typing import Dict, Any
+import time
+import base64
+import urllib.parse
+from typing import List, Dict, Any
 from dotenv import load_dotenv
 
-# Load the variables from .env relative to this file's location
-basedir = os.path.abspath(os.path.dirname(__file__))
-load_dotenv(os.path.join(basedir, ".env"))
+load_dotenv()
 
-SOUNDCLOUD_API_BASE = "https://api-v2.soundcloud.com"
+class SpotifyService:
+    def __init__(self, db):
+        self.db = db
+        self.client_id = os.getenv("SPOTIFY_CLIENT_ID")
+        self.client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
 
-def get_spotify_client():
-    client_id = os.getenv("SOUNDCLOUD_CLIENT_ID")
-    if not client_id:
-        print(f"FATAL ERROR: SOUNDCLOUD_CLIENT_ID not found in {os.path.join(basedir, '.env')}")
-    return SoundCloudClient(client_id)
-
-class SoundCloudClient:
-    def __init__(self, client_id):
-        self.client_id = client_id
-
-    def search_tracks(self, query: str) -> Dict[str, Any]:
-        if not query or not self.client_id:
-            return {"tracks": {"items": []}}
-
-        encoded_query = urllib.parse.quote(query)
-        # Search endpoint for tracks
-        url = f"{SOUNDCLOUD_API_BASE}/search/tracks?q={encoded_query}&client_id={self.client_id}&limit=12"
+    def get_token(self) -> str:
+        import models 
+        host = self.db.query(models.User).filter(models.User.spotify_id == "host").first()
         
-        # We add these headers to mimic a real web browser, 
-        # which helps bypass the 403 Forbidden error.
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json',
-            'Referer': 'https://soundcloud.com/',
-            'Origin': 'https://soundcloud.com'
-        }
-        
-        try:
-            response = requests.get(url, headers=headers)
-            
-            if response.status_code == 403:
-                print("❌ SEARCH BLOCKED: Your SoundCloud Client ID is restricted.")
-                print("👉 ACTION: Open soundcloud.com, search for something, and find the 'client_id' in your Browser Network tab to use in your .env.")
-                return {"tracks": {"items": []}}
+        if not host:
+            print("vibeQ ERROR: No host user found in database.")
+            return None
+        if not host.refresh_token:
+            print("vibeQ ERROR: Host found, but no refresh_token available.")
+            return None
 
-            response.raise_for_status() 
-            data = response.json()
+        current_time = int(time.time())
+        # Refresh if token is expired or missing
+        if not host.access_token or current_time > (host.token_expires_at - 60):
+            print("vibeQ: Token expired or missing. Refreshing...")
             
-            # SoundCloud returns results in a 'collection' array
-            soundcloud_items = data.get('collection', [])
-            
-            spotify_style_items = []
-            
-            for item in soundcloud_items:
-                # SoundCloud uses 'large' by default (100x100), we swap to 't500x500' for the UI
-                artwork = item.get('artwork_url', '')
-                if artwork:
-                    artwork = artwork.replace('large', 't500x500')
-                else:
-                    # Fallback to the artist's avatar if the track has no artwork
-                    artwork = item.get('user', {}).get('avatar_url', '').replace('large', 't500x500')
+            auth_str = f"{self.client_id}:{self.client_secret}"
+            auth_b64 = base64.b64encode(auth_str.encode()).decode()
 
-                mapped_item = {
-                    "id": str(item.get('id')), 
-                    "name": item.get('title'),
-                    "artists": [{"name": item.get('user', {}).get('username', 'Unknown Artist')}],
-                    "album": { 
-                        "images": [{"url": artwork}] 
+            try:
+                response = requests.post(
+                    "https://accounts.spotify.com/api/token",
+                    data={
+                        "grant_type": "refresh_token",
+                        "refresh_token": host.refresh_token
                     },
-                    "duration_ms": item.get('duration', 0)
-                }
-                spotify_style_items.append(mapped_item)
+                    headers={
+                        "Authorization": f"Basic {auth_b64}",
+                        "Content-Type": "application/x-www-form-urlencoded"
+                    }
+                )
 
-            return {"tracks": {"items": spotify_style_items}}
+                if response.status_code == 200:
+                    data = response.json()
+                    host.access_token = data.get("access_token")
+                    host.token_expires_at = current_time + data.get("expires_in", 3600)
+                    if "refresh_token" in data:
+                        host.refresh_token = data["refresh_token"]
+                    
+                    self.db.commit()
+                    return host.access_token
+                else:
+                    print(f"vibeQ ERROR: Refresh failed ({response.status_code}): {response.text}")
+                    return None
+            except Exception as e:
+                print(f"vibeQ ERROR: Exception during refresh: {e}")
+                return None
+
+        return host.access_token
+
+    def search(self, query: str) -> List[Dict[str, Any]]:
+        if not query or len(query.strip()) < 3:
+            return []
+
+        token = self.get_token()
+        if not token:
+            print("vibeQ ERROR: No token available for search. Has the host connected?")
+            return []
+
+        headers = {
+            "Authorization": f"Bearer {token}"
+        }
+
+        params = {
+            "q": query.strip(),
+            "type": "track",
+            "limit": 10
+        }
+
+        try:
+            resp = requests.get("https://api.spotify.com/v1/search", headers=headers, params=params)
+            
+            if resp.status_code != 200:
+                print(f"vibeQ ERROR: Spotify API {resp.status_code}")
+                print(f"Response: {resp.text}")
+                return []
+
+            data = resp.json()
+            tracks = data.get('tracks', {}).get('items', [])
+            
+            return [{
+                "id": t['id'],
+                "name": t['name'],
+                "artist": t['artists'][0]['name'],
+                "album_art": t['album']['images'][0]['url'] if t['album']['images'] else "",
+                "duration_ms": t['duration_ms']
+            } for t in tracks]
             
         except Exception as e:
-            print(f"❌ SoundCloud API Error: {e}")
-            return {"tracks": {"items": []}}
+            print(f"vibeQ ERROR: Search Exception: {e}")
+            return []
 
-
-    # Stubs for architectural consistency with previous Spotify logic
-    def get_auth_url(self): 
-        return "http://localhost:3000"
-    
-    def get_tokens(self, code): 
-        return {"access_token": "fake"}
+def get_spotify_client(db):
+    return SpotifyService(db)
