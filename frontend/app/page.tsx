@@ -105,12 +105,14 @@ export default function Home() {
                             <p className="text-sm text-slate-400 font-medium">{track.artist}</p>
                         </div>
                     </div>
+                    {!track.blocked && (
                     <button 
                         onClick={() => addToQueue(track)} 
                         className="text-slate-200 group-hover:text-[#10B981] transition-all transform group-hover:scale-110"
                     >
                         <AddCircleIcon sx={{ fontSize: 44 }} />
                     </button>
+                    )}
                 </div>
                 ))}
             </div>

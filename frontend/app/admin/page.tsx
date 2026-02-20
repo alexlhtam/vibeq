@@ -210,6 +210,32 @@ function AdminDashboardContent() {
         <nav className="px-6 space-y-2">
           <a href="/" target="_blank" className="flex items-center gap-4 p-4 text-gray-400 hover:text-white transition-all"><SearchIcon /><span>Guest View</span></a>
         </nav>
+
+        {/* Content Filters */}
+        <div className="mt-auto px-6 pb-8 space-y-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 px-4">Content Filters</p>
+          
+          {/* Explicit Toggle */}
+          <button onClick={toggleExplicit} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-white/5">
+            <ExplicitIcon sx={{ fontSize: 20 }} className={blockExplicit ? 'text-red-400' : 'text-gray-600'} />
+            <span className={`text-sm flex-1 text-left ${blockExplicit ? 'text-white font-bold' : 'text-gray-400'}`}>Block Explicit</span>
+            <div className={`w-10 h-6 rounded-full relative transition-all ${blockExplicit ? 'bg-red-500' : 'bg-gray-700'}`}>
+              <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${blockExplicit ? 'left-5' : 'left-1'}`} />
+            </div>
+          </button>
+
+          {/* PG Toggle */}
+          <button onClick={togglePG} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-white/5 ${!musixmatchAvailable ? 'opacity-40 cursor-not-allowed' : ''}`} disabled={!musixmatchAvailable}>
+            <FamilyRestroomIcon sx={{ fontSize: 20 }} className={blockPG ? 'text-amber-400' : 'text-gray-600'} />
+            <div className="flex-1 text-left">
+              <span className={`text-sm block ${blockPG ? 'text-white font-bold' : 'text-gray-400'}`}>PG Mode</span>
+              {!musixmatchAvailable && <span className="text-[9px] text-gray-600">Set MUSIXMATCH_API_KEY</span>}
+            </div>
+            <div className={`w-10 h-6 rounded-full relative transition-all ${blockPG ? 'bg-amber-500' : 'bg-gray-700'}`}>
+              <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${blockPG ? 'left-5' : 'left-1'}`} />
+            </div>
+          </button>
+        </div>
       </aside>
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
