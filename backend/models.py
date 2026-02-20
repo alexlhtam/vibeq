@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, BigInteger, Boolean
+from sqlalchemy import Column, Integer, String, BigInteger
 from database import Base
 
 class User(Base):
@@ -17,12 +17,5 @@ class SongRequest(Base):
     artist = Column(String)
     album_art_url = Column(String)
     duration_ms = Column(Integer)
-    is_explicit = Column(Boolean, default=False)
     status = Column(String, default="PENDING") # PENDING, APPROVED, REJECTED, COMPLETED
     position = Column(Integer, default=0)
-
-class Settings(Base):
-    __tablename__ = "settings"
-    id = Column(Integer, primary_key=True, index=True)
-    key = Column(String, unique=True, index=True)
-    value = Column(String, default="")

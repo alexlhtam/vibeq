@@ -51,28 +51,28 @@ export default function Home() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#F8FAFC] text-slate-800">
+    <div className="flex min-h-screen bg-[#F3F4F6] text-slate-800 font-sans">
       {/* Sidebar */}
-      <aside className="w-72 bg-[#0B1120] text-white flex-col hidden md:flex shrink-0">
-        <div className="p-10 flex items-center gap-4">
-           <div className="bg-[#10B981] p-2.5 rounded-2xl shadow-lg"><MusicNoteIcon /></div>
-           <h1 className="text-3xl tracking-tight"><span className="font-extralight">vibe</span><span className="font-black text-[#10B981]">Q</span></h1>
+      <aside className="w-64 bg-[#0B1120] text-white flex-col hidden md:flex shrink-0">
+        <div className="p-8 flex items-center gap-3">
+           <div className="bg-[#10B981] p-2 rounded-xl shadow-lg shadow-green-900/20"><MusicNoteIcon /></div>
+           <h1 className="text-2xl font-black tracking-tighter">vibeQ</h1>
         </div>
-        <nav className="px-6 space-y-2">
-            <div className="flex items-center gap-4 p-4 bg-[#1F2937] border-l-4 border-[#10B981] text-white">
+        <nav className="px-4 py-2 space-y-1">
+            <div className="flex items-center gap-3 p-4 bg-[#1F2937] border-l-4 border-[#10B981] text-white">
                 <SearchIcon sx={{ fontSize: 20 }}/>
-                <span>Search Music</span>
+                <span className="text-sm font-bold">Search Music</span>
             </div>
-            <a href="/admin" className="flex items-center gap-4 p-4 text-gray-400 hover:text-white transition-all">
-                <span>Host Dashboard</span>
+            <a href="/admin" className="flex items-center gap-3 p-4 text-gray-400 hover:text-white rounded-lg transition-all">
+                <span className="text-sm">Host Dashboard</span>
             </a>
         </nav>
       </aside>
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className="bg-white border-b h-24 flex items-center px-12 shrink-0">
-            <h2 className="font-black text-2xl text-slate-900">Guest Mode</h2>
+        <header className="bg-white border-b border-gray-200 h-20 flex items-center px-12 shrink-0">
+            <h2 className="font-bold text-lg text-gray-800 uppercase tracking-widest">Guest Mode</h2>
         </header>
         
         <div className="flex-1 overflow-y-auto p-12">
@@ -93,20 +93,16 @@ export default function Home() {
                 {error && <p className="text-center text-red-400 font-medium">{error}</p>}
                 
                 {results.map((track) => (
-                <div key={track.id} className={`p-5 rounded-[1.5rem] shadow-sm border flex items-center justify-between transition-all group ${track.blocked ? 'bg-slate-50 border-slate-100 opacity-50 cursor-not-allowed' : 'bg-white border-transparent hover:border-[#10B981] hover:shadow-xl hover:scale-[1.02]'}`}>
+                <div key={track.id} className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-transparent hover:border-[#10B981] flex items-center justify-between transition-all group hover:shadow-xl hover:scale-[1.02]">
                     <div className="flex items-center gap-5">
                         <img 
                             src={track.album_art || 'https://via.placeholder.com/150'} 
-                            className={`w-16 h-16 rounded-2xl object-cover shadow-md ${track.blocked ? 'grayscale' : ''}`}
+                            className="w-16 h-16 rounded-2xl object-cover shadow-md" 
                             alt="" 
                         />
                         <div>
-                            <div className="flex items-center gap-2">
-                              <p className={`font-black leading-tight ${track.blocked ? 'text-slate-400' : 'text-slate-900'}`}>{track.name}</p>
-                              {track.explicit && <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${track.blocked ? 'bg-red-100 text-red-400' : 'bg-slate-200 text-slate-500'}`}>E</span>}
-                            </div>
+                            <p className="font-black text-slate-900 leading-tight">{track.name}</p>
                             <p className="text-sm text-slate-400 font-medium">{track.artist}</p>
-                            {track.blocked && <p className="text-[10px] text-red-400 font-bold mt-0.5">Explicit content blocked by host</p>}
                         </div>
                     </div>
                     {!track.blocked && (

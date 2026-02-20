@@ -14,12 +14,7 @@ import {
   Shuffle as ShuffleIcon,
   Delete as DeleteIcon,
   DragIndicator as DragIcon,
-  LibraryMusic as SpotifyIcon,
-  AutoAwesome as AutoAwesomeIcon,
-  AddCircle as AddCircleIcon,
-  Refresh as RefreshIcon,
-  Explicit as ExplicitIcon,
-  FamilyRestroom as FamilyRestroomIcon
+  LibraryMusic as SpotifyIcon
 } from '@mui/icons-material';
 
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -37,10 +32,7 @@ function SortableSong({ req, onRemove }: { req: any, onRemove: (id: number) => v
       <div {...attributes} {...listeners} className="cursor-grab text-slate-300 hover:text-slate-600 px-1"><DragIcon fontSize="small" /></div>
       <img src={req.album_art_url} className="w-12 h-12 rounded-xl object-cover shadow-sm" alt="" />
       <div className="flex-1">
-        <div className="flex items-center gap-2">
-          <p className="font-bold text-slate-800 text-sm">{req.title}</p>
-          {req.is_explicit && <span className="text-[8px] font-black bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded">E</span>}
-        </div>
+        <p className="font-bold text-slate-800 text-sm">{req.title}</p>
         <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{req.artist}</p>
       </div>
       <button onClick={() => onRemove(req.id)} className="text-slate-200 hover:text-red-500 transition-colors p-2"><DeleteIcon fontSize="small" /></button>
@@ -56,17 +48,6 @@ function AdminDashboardContent() {
   const [isPaused, setIsPaused] = useState(true);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
-  const [blockExplicit, setBlockExplicit] = useState(false);
-  const [blockPG, setBlockPG] = useState(false);
-  const [musixmatchAvailable, setMusixmatchAvailable] = useState(false);
-
-  // Refs for the Spotify event listener (avoids stale closure issues)
-  const queueRef = useRef<any[]>([]);
-  const tokenRef = useRef("");
-  const deviceIdRef = useRef("");
-  const isTransitioningRef = useRef(false);
   
   const searchParams = useSearchParams();
   const status = searchParams.get('status');
@@ -80,24 +61,6 @@ function AdminDashboardContent() {
     } catch (error) { console.error(error); }
   }, []);
 
-  const fetchSuggestions = useCallback(async () => {
-    setSuggestionsLoading(true);
-    try {
-      const res = await axios.get("http://localhost:8000/suggestions");
-      setSuggestions(res.data?.suggestions || []);
-    } catch (error) { console.error("Suggestions error:", error); }
-    finally { setSuggestionsLoading(false); }
-  }, []);
-
-  const fetchSettings = useCallback(async () => {
-    try {
-      const res = await axios.get("http://localhost:8000/settings");
-      setBlockExplicit(res.data.block_explicit);
-      setBlockPG(res.data.block_pg);
-      setMusixmatchAvailable(res.data.musixmatch_available);
-    } catch (error) { console.error("Settings error:", error); }
-  }, []);
-
   const fetchToken = useCallback(async () => {
     try {
       const res = await axios.get("http://localhost:8000/spotify/token");
@@ -105,11 +68,6 @@ function AdminDashboardContent() {
     } catch (e) { console.log("Not logged in"); }
     return null;
   }, []);
-
-  // Keep refs in sync with state so event listeners always have fresh values
-  useEffect(() => { queueRef.current = queue; }, [queue]);
-  useEffect(() => { tokenRef.current = token; }, [token]);
-  useEffect(() => { deviceIdRef.current = deviceId; }, [deviceId]);
 
   // Initialize Spotify Player
   useEffect(() => {
@@ -127,20 +85,7 @@ function AdminDashboardContent() {
       window.onSpotifyWebPlaybackSDKReady = () => {
         const p = new window.Spotify.Player({
           name: 'vibeQ Jukebox',
-          getOAuthToken: async (cb: any) => {
-            // Always fetch a fresh token (handles auto-refresh)
-            try {
-              const res = await axios.get("http://localhost:8000/spotify/token");
-              if (res.data.token) {
-                setToken(res.data.token);
-                cb(res.data.token);
-              } else {
-                cb(tokenRef.current);
-              }
-            } catch {
-              cb(tokenRef.current);
-            }
-          },
+          getOAuthToken: (cb: any) => { cb(currentToken); },
           volume: 0.5
         });
 
@@ -151,48 +96,10 @@ function AdminDashboardContent() {
           setIsPaused(state.paused);
           setPosition(state.position);
           setDuration(state.duration);
-
-          // Detect track ended: paused + position 0 + no Spotify-queued next tracks
-          const trackEnded = state.paused && 
-            state.position === 0 &&
-            state.track_window.next_tracks.length === 0;
-
-          if (trackEnded && !isTransitioningRef.current) {
-            const q = queueRef.current;
-            const nowPlaying = q.find((r: any) => r.status === 'APPROVED');
-            if (!nowPlaying) return;
-
-            // Verify this is actually the track that was playing (not a fresh load)
-            const currentSpotifyId = state.track_window?.current_track?.id;
-            if (currentSpotifyId !== nowPlaying.spotify_track_id) return;
-
-            isTransitioningRef.current = true;
-            
-            // Mark current as completed, fetch new queue, then play next
-            axios.post(`http://localhost:8000/request/${nowPlaying.id}/played`)
-              .then(() => axios.get("http://localhost:8000/queue"))
-              .then(res => {
-                const newQueue = res.data?.queue || [];
-                setQueue(newQueue);
-                
-                const nextTrack = newQueue.find((r: any) => r.status === 'APPROVED');
-                const dev = deviceIdRef.current;
-                const tok = tokenRef.current;
-                
-                if (nextTrack && dev && tok) {
-                  fetch(`https://api.spotify.com/v1/me/player/play?device_id=${dev}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({ uris: [`spotify:track:${nextTrack.spotify_track_id}`] }),
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${tok}` },
-                  }).finally(() => {
-                    // Allow next transition after a short delay
-                    setTimeout(() => { isTransitioningRef.current = false; }, 2000);
-                  });
-                } else {
-                  isTransitioningRef.current = false;
-                }
-              })
-              .catch(() => { isTransitioningRef.current = false; });
+          
+          if (state.paused && state.position === 0 && state.track_window.next_tracks.length === 0) {
+            const current = queue.find(r => r.status === 'APPROVED');
+            if (current) handleSkip(current.id);
           }
         });
 
@@ -220,30 +127,12 @@ function AdminDashboardContent() {
     return () => clearInterval(interval);
   }, [fetchQueue]);
 
-  // Fetch suggestions on mount and every 30s
-  useEffect(() => {
-    fetchSuggestions();
-    const interval = setInterval(fetchSuggestions, 30000);
-    return () => clearInterval(interval);
-  }, [fetchSuggestions]);
-
-  // Fetch settings on mount
-  useEffect(() => {
-    fetchSettings();
-  }, [fetchSettings]);
-
-  // Sync logic — only starts playback when nothing is playing yet
+  // Sync logic
   useEffect(() => {
     const nowPlayingTrack = queue.find(r => r.status === 'APPROVED');
-
-    if (nowPlayingTrack && token && deviceId && !isTransitioningRef.current) {
+    if (nowPlayingTrack && token && deviceId) {
       player?.getCurrentState().then((state: any) => {
-        // Only start playing if nothing is currently loaded, or a completely different track is loaded
-        const needsPlay = !state || state.track_window.current_track.id !== nowPlayingTrack.spotify_track_id;
-        // But don't interfere if Spotify is actively playing something
-        const isActivelyPlaying = state && !state.paused;
-        
-        if (needsPlay && !isActivelyPlaying) {
+        if (!state || state.track_window.current_track.id !== nowPlayingTrack.spotify_track_id) {
           fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
             method: 'PUT',
             body: JSON.stringify({ uris: [`spotify:track:${nowPlayingTrack.spotify_track_id}`] }),
@@ -253,7 +142,6 @@ function AdminDashboardContent() {
       });
     } else if (!nowPlayingTrack && player) {
       // No more tracks in queue — pause playback
-      isTransitioningRef.current = false;
       player.pause();
       setIsPaused(true);
       setPosition(0);
@@ -262,21 +150,8 @@ function AdminDashboardContent() {
   }, [queue, deviceId, token, player]);
 
   const handleSkip = async (id: number) => {
-    isTransitioningRef.current = true;
     await axios.post(`http://localhost:8000/request/${id}/played`);
-    const res = await axios.get("http://localhost:8000/queue");
-    const newQueue = res.data?.queue || [];
-    setQueue(newQueue);
-    
-    const nextTrack = newQueue.find((r: any) => r.status === 'APPROVED');
-    if (nextTrack && deviceId && token) {
-      await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
-        method: 'PUT',
-        body: JSON.stringify({ uris: [`spotify:track:${nextTrack.spotify_track_id}`] }),
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      });
-    }
-    setTimeout(() => { isTransitioningRef.current = false; }, 2000);
+    fetchQueue();
   };
 
   const handleRemove = async (id: number) => {
@@ -287,27 +162,6 @@ function AdminDashboardContent() {
   const handleShuffle = async () => {
     await axios.post(`http://localhost:8000/queue/shuffle`);
     fetchQueue();
-  };
-
-  const handleAddSuggestion = async (track: any) => {
-    try {
-      await axios.post("http://localhost:8000/suggestions/add", track);
-      // Remove from local suggestions list immediately
-      setSuggestions(prev => prev.filter(s => s.id !== track.id));
-      fetchQueue();
-    } catch (error) { console.error("Add suggestion error:", error); }
-  };
-
-  const toggleExplicit = async () => {
-    const newVal = !blockExplicit;
-    setBlockExplicit(newVal);
-    await axios.post("http://localhost:8000/settings", { block_explicit: newVal });
-  };
-
-  const togglePG = async () => {
-    const newVal = !blockPG;
-    setBlockPG(newVal);
-    await axios.post("http://localhost:8000/settings", { block_pg: newVal });
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -337,7 +191,7 @@ function AdminDashboardContent() {
       <div className="min-h-screen bg-[#0B1120] flex items-center justify-center p-6 text-center">
         <div className="max-w-md space-y-8">
           <div className="bg-[#10B981] w-20 h-20 rounded-3xl flex items-center justify-center mx-auto shadow-2xl"><MusicNoteIcon sx={{ fontSize: 40, color: 'white' }} /></div>
-          <h1 className="text-4xl text-white tracking-tight"><span className="font-extralight">vibe</span><span className="font-black text-[#10B981]">Q</span> <span className="font-black">Admin</span></h1>
+          <h1 className="text-4xl font-black text-white tracking-tighter">vibeQ Admin</h1>
           <button onClick={() => axios.get("http://localhost:8000/login/spotify").then(res => window.location.href = res.data.url)} className="w-full py-4 bg-[#1DB954] text-white rounded-2xl font-black flex items-center justify-center gap-3 shadow-xl">
             <SpotifyIcon /> CONNECT SPOTIFY
           </button>
@@ -351,7 +205,7 @@ function AdminDashboardContent() {
       <aside className="w-72 bg-[#0B1120] text-white flex-col hidden md:flex shrink-0">
         <div className="p-10 flex items-center gap-4">
           <div className="bg-[#10B981] p-2.5 rounded-2xl shadow-lg"><MusicNoteIcon /></div>
-          <h1 className="text-3xl tracking-tight"><span className="font-extralight">vibe</span><span className="font-black text-[#10B981]">Q</span></h1>
+          <h1 className="text-3xl font-black tracking-tighter">vibeQ</h1>
         </div>
         <nav className="px-6 space-y-2">
           <a href="/" target="_blank" className="flex items-center gap-4 p-4 text-gray-400 hover:text-white transition-all"><SearchIcon /><span>Guest View</span></a>
@@ -460,13 +314,7 @@ function AdminDashboardContent() {
                   <div key={req.id} className="p-5 bg-white rounded-[2rem] flex items-center justify-between shadow-sm border border-transparent hover:shadow-md transition-all">
                     <div className="flex items-center gap-5">
                       <img src={req.album_art_url} className="w-14 h-14 rounded-2xl object-cover shadow-sm" alt="" />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-bold text-slate-800 text-sm">{req.title}</p>
-                          {req.is_explicit && <span className="text-[8px] font-black bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded">E</span>}
-                        </div>
-                        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{req.artist}</p>
-                      </div>
+                      <div><p className="font-bold text-slate-800 text-sm">{req.title}</p><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{req.artist}</p></div>
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => axios.post(`http://localhost:8000/request/${req.id}/approve`).then(fetchQueue)} className="text-[#10B981] hover:scale-110 transition-all"><CheckCircleIcon sx={{ fontSize: 44 }} /></button>
@@ -478,41 +326,6 @@ function AdminDashboardContent() {
               </div>
             </section>
           </div>
-
-          {/* SUGGESTED TRACKS */}
-          <section className="space-y-6">
-            <div className="flex justify-between items-center px-4">
-              <div className="flex items-center gap-3">
-                <AutoAwesomeIcon sx={{ fontSize: 18 }} className="text-amber-400" />
-                <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Suggested Tracks</h3>
-              </div>
-              <button onClick={fetchSuggestions} disabled={suggestionsLoading} className="bg-white border border-slate-100 hover:bg-slate-50 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-sm transition-all disabled:opacity-50">
-                <RefreshIcon sx={{ fontSize: 16 }} className={suggestionsLoading ? 'animate-spin' : ''} /> Refresh
-              </button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {suggestions.map(track => (
-                <div key={track.id} className="p-4 bg-white rounded-2xl flex items-center gap-4 shadow-sm border border-slate-50 hover:shadow-md hover:border-amber-200 transition-all group">
-                  <img src={track.album_art} className="w-12 h-12 rounded-xl object-cover shadow-sm shrink-0" alt="" />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-slate-800 text-sm truncate">{track.name}</p>
-                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest truncate">{track.artist}</p>
-                  </div>
-                  <button onClick={() => handleAddSuggestion(track)} className="text-slate-200 group-hover:text-[#10B981] transition-all shrink-0 hover:scale-110">
-                    <AddCircleIcon sx={{ fontSize: 32 }} />
-                  </button>
-                </div>
-              ))}
-              {suggestions.length === 0 && !suggestionsLoading && (
-                <div className="col-span-full p-12 text-center text-slate-200 border-2 border-dashed border-slate-100 rounded-[2rem] font-bold">
-                  {queue.length === 0 ? "Add songs to the queue to get suggestions" : "No suggestions available"}
-                </div>
-              )}
-              {suggestionsLoading && suggestions.length === 0 && (
-                <div className="col-span-full p-12 text-center text-slate-300 font-bold animate-pulse">Finding tracks you might like...</div>
-              )}
-            </div>
-          </section>
         </div>
       </main>
     </div>

@@ -81,44 +81,16 @@ def get_token(db: Session = Depends(database.get_db)):
 
 @app.get("/search")
 def search(query: str, db: Session = Depends(database.get_db)):
-    spotify = services.get_spotify_client(db)
-    results = spotify.search(query)
-
-    # Apply filters based on admin settings
-    block_explicit = services.get_setting(db, "block_explicit", "false") == "true"
-    block_pg = services.get_setting(db, "block_pg", "false") == "true"
-
-    # Mark blocked explicit tracks instead of removing them
-    for t in results:
-        t["blocked"] = block_explicit and t.get("explicit", False)
-
-    if block_pg:
-        mx = services.get_musixmatch_client()
-        if mx.is_available():
-            filtered = []
-            for t in results:
-                check = mx.check_lyrics(t["name"], t["artist"])
-                t["pg_safe"] = check["is_pg_safe"]
-                if check["is_pg_safe"]:
-                    filtered.append(t)
-            results = filtered
-
-    return results
+    return services.get_spotify_client(db).search(query)
 
 @app.post("/request")
 def add_request(track: dict = Body(...), db: Session = Depends(database.get_db)):
-    # Check explicit filter before allowing request
-    block_explicit = services.get_setting(db, "block_explicit", "false") == "true"
-    if block_explicit and track.get("explicit", False):
-        raise HTTPException(status_code=400, detail="Explicit songs are currently blocked")
-
     new_req = models.SongRequest(
         spotify_track_id=track['id'], 
         title=track['name'], 
         artist=track['artist'], 
         album_art_url=track['album_art'], 
-        duration_ms=track['duration_ms'],
-        is_explicit=track.get('explicit', False)
+        duration_ms=track['duration_ms']
     )
     db.add(new_req)
     db.commit()
@@ -189,80 +161,3 @@ def clear_queue(db: Session = Depends(database.get_db)):
     db.query(models.SongRequest).delete()
     db.commit()
     return {"status": "cleared"}
-
-@app.get("/suggestions")
-def get_suggestions(db: Session = Depends(database.get_db)):
-    """Return suggested tracks based on approved + completed songs in the queue."""
-    queue_items = db.query(models.SongRequest).filter(
-        models.SongRequest.status.in_(["APPROVED", "COMPLETED"])
-    ).all()
-
-    if not queue_items:
-        return {"suggestions": []}
-
-    # Collect artist names and track IDs from our own DB
-    artist_names = list({item.artist for item in queue_items})
-    # Exclude all tracks already in the system
-    all_items = db.query(models.SongRequest).all()
-    exclude_ids = {item.spotify_track_id for item in all_items}
-
-    spotify = services.get_spotify_client(db)
-    suggestions = spotify.get_suggestions_by_artists(artist_names, exclude_ids)
-
-    # Apply explicit filter to suggestions too
-    block_explicit = services.get_setting(db, "block_explicit", "false") == "true"
-    if block_explicit:
-        suggestions = [t for t in suggestions if not t.get("explicit", False)]
-
-    return {"suggestions": suggestions}
-
-@app.post("/suggestions/add")
-def add_suggestion(track: dict = Body(...), db: Session = Depends(database.get_db)):
-    """Admin injects a suggested track directly into the approved queue."""
-    # Assign it the next position at the end of the approved queue
-    max_pos = db.query(func.max(models.SongRequest.position)).filter(
-        models.SongRequest.status == "APPROVED"
-    ).scalar() or 0
-
-    new_req = models.SongRequest(
-        spotify_track_id=track['id'],
-        title=track['name'],
-        artist=track['artist'],
-        album_art_url=track.get('album_art', ''),
-        duration_ms=track.get('duration_ms', 0),
-        is_explicit=track.get('explicit', False),
-        status="APPROVED",
-        position=max_pos + 1
-    )
-    db.add(new_req)
-    db.commit()
-    return {"status": "added", "id": new_req.id}
-
-# --- Settings Endpoints ---
-
-@app.get("/settings")
-def get_settings(db: Session = Depends(database.get_db)):
-    """Return all admin settings."""
-    return {
-        "block_explicit": services.get_setting(db, "block_explicit", "false") == "true",
-        "block_pg": services.get_setting(db, "block_pg", "false") == "true",
-        "musixmatch_available": services.get_musixmatch_client().is_available()
-    }
-
-@app.post("/settings")
-def update_settings(data: dict = Body(...), db: Session = Depends(database.get_db)):
-    """Update admin settings. Accepts {block_explicit: bool, block_pg: bool}."""
-    if "block_explicit" in data:
-        services.set_setting(db, "block_explicit", "true" if data["block_explicit"] else "false")
-    if "block_pg" in data:
-        services.set_setting(db, "block_pg", "true" if data["block_pg"] else "false")
-    return {"status": "updated"}
-
-@app.post("/lyrics/check")
-def check_lyrics(track: dict = Body(...), db: Session = Depends(database.get_db)):
-    """Check a specific track's lyrics for PG content (admin tool)."""
-    mx = services.get_musixmatch_client()
-    if not mx.is_available():
-        return {"error": "Musixmatch API key not configured", "is_pg_safe": True}
-    result = mx.check_lyrics(track.get("name", ""), track.get("artist", ""))
-    return result
